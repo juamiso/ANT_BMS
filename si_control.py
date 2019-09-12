@@ -180,7 +180,7 @@ while 1:
       print ('%s WARNING Modbus Inverter not answering' %(time_s))
     try:
       SoC_target=int(req.get('http://localhost:8087/getPlainValue/vis.0.SoC_target').text)
-      if SoC_target > 10 and SoC_target <100 and SoC_target != SoC_target_int:
+      if SoC_target > 10 and SoC_target <=100 and SoC_target != SoC_target_int:
          SoC_target_int = SoC_target
          batt_full_flag = 0
          time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
@@ -238,9 +238,11 @@ while 1:
     #Avoid toggling after big load turns off and system changes from supply to charge
     #even though PV is not enough (or even 0)
     if (pv+charger)<0 : #if charger bigger than photovoltaik
-      charger = - pv  #limit it to pv
-      time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
-      print ('%s Avoid toggle' %(time_s))
+      time_s = strftime("%y/%m/%d %H:%M:%S", time.localtime())
+      print ('%s Avoid toggle charger %d pv %d' %(time_s,charger,pv))
+      charger = -pv
+      if pv == 0 :
+        charger = - 100  #keep supplying something, avoid turning SI off
     set_power(grid,pv,SoC_calc,charger,si_power,action)
     if count == 5 :
       try:

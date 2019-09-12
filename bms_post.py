@@ -24,10 +24,9 @@ MOSFET_Discharge_St=["OFF","ON","cell overdischarge","overcurrent","4","pack ove
 MOSFET_Charge_St=["OFF","ON","overcharge","overcurrent","batt full","pack overvoltage",
 "bat overtemp","MOSFET overtemp","abnormal current","bat not detected",
 "PCB overtemp","11-undefined","12-undefined","Discharge MOSFET abnormality","14","Manual off"]
-
-
-
-
+#134-135
+Bal_St=["OFF","limit trigger exceeds","charging v diff too high","overtemp","ACTIVE",
+        "5-udef","6-udef","7-udef","8-udef","9-udef","PCB Overtemp"]
 while True :
  test='DBDB00000000'
  try:
@@ -63,6 +62,39 @@ while True :
    resp = req.get(url+'BMS_MOSFET_Disch_St'+'?value='+MOSFET_Discharge_St[int(data,16)])
  except:
     pass
+
+#BALANCING STATUS
+ data = (Antw33.encode('hex') [105*2:105*2+2])
+ try:
+   resp = req.get(url+'BMS_Bal_St'+'?value='+Bal_St[int(data,16)])
+ except:
+    pass
+
+ data = Antw33.encode('hex') [134*2:135*2+2]
+ try:
+   data=struct.unpack('>H',unhexlify(data))[0]
+ except:
+   data=0xFFFF
+ try:
+   resp = req.get(url+'BMS_Bal0'+'?value='+str(data>>0&1))
+   resp = req.get(url+'BMS_Bal1'+'?value='+str(data>>1&1))
+   resp = req.get(url+'BMS_Bal2'+'?value='+str(data>>2&1))
+   resp = req.get(url+'BMS_Bal3'+'?value='+str(data>>3&1))
+   resp = req.get(url+'BMS_Bal4'+'?value='+str(data>>4&1))
+   resp = req.get(url+'BMS_Bal5'+'?value='+str(data>>5&1))
+   resp = req.get(url+'BMS_Bal6'+'?value='+str(data>>6&1))
+   resp = req.get(url+'BMS_Bal7'+'?value='+str(data>>7&1))
+   resp = req.get(url+'BMS_Bal8'+'?value='+str(data>>8&1))
+   resp = req.get(url+'BMS_Bal9'+'?value='+str(data>>9&1))
+   resp = req.get(url+'BMS_Bal10'+'?value='+str(data>>10&1))
+   resp = req.get(url+'BMS_Bal11'+'?value='+str(data>>11&1))
+   resp = req.get(url+'BMS_Bal12'+'?value='+str(data>>12&1))
+   resp = req.get(url+'BMS_Bal13'+'?value='+str(data>>13&1))
+   resp = req.get(url+'BMS_Bal14'+'?value='+str(data>>14&1))
+   resp = req.get(url+'BMS_Bal15'+'?value='+str(data>>15&1))
+ except:
+  pass
+
 #BMS_Current
  data = (Antw33.encode('hex') [(70*2):(73*2+2)])
  try:
