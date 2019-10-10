@@ -44,12 +44,12 @@ def set_power(grid,PV,SoC_calc,charger,si_power,action):
 
   resp = req.get(url+'SoC_calc'+'?value='+str(SoC_calc))
   if charger < 0 :
-     if si_power != 0:
+     if si_power < 0:
          req.get(url+'Batt_Charge'+'?value='+str(si_power))
          req.get(url+'Batt_Discharge'+'?value='+str(0))
   elif charger > 0:
      req.get(url+'Batt_Charge'+'?value='+str(0))
-     if si_power !=0 :
+     if si_power >0 :
         req.get(url+'Batt_Discharge'+'?value='+str(si_power))
   else :
     req.get(url+'Batt_Charge'+'?value='+str(0))
@@ -133,7 +133,7 @@ load = 0 #(+)
 pv = 0 # (+)
 grid = int(0)    #Total going to GRID
 charger = int(10)
-first_run=1
+charger_old = 0
 batt_full_flag = 0
 SoC_target_int = 90
 count = 0
@@ -146,8 +146,9 @@ except:
   print("WH_TOTAL funtion call error")
 today = int(strftime("%M", time.localtime()))
 while 1:
-    value=adc.read_adc(0, gain=GAIN,data_rate=8)
-    voltage = float(value)*6.144/32768.0 - 0.04 #0.3 V offset at pack level calibrated
+#    value=adc.read_adc(0, gain=GAIN,data_rate=8)
+    #voltage = float(value)*6.144/32768.0 - 0.04 #0.3 V offset at pack level calibrated
+    voltage = 4
     voltage_lim=voltage
     if voltage < 3.35 :
       voltage_lim = 3.35
@@ -211,8 +212,6 @@ while 1:
 
 
     elif grid > 10:
-        if charger == 0:      #Sudden increase of demand while inverter was off
-           first_run = 1      #leave some time to react before looping again
         charger += grid      #setpoint charger
         action = "Inc.Supply"
         if charger > 1600 :        #Lower limit
@@ -256,17 +255,21 @@ while 1:
       modus = "Supply"
     else :
       modus = "Charge"
+     # if charger >-100 and charger_old >-100 : #Do not charge if lower than 100 W (efficiency very bad)
+      #  charger = 0
+  
     # VERBOSE MODE for logging to file
-    #time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
-    #print ('%s%s %04d act %04.0f %04.0f PV %04d GRID %04d CELL %.3f PACK %2.2f %05.2f SoC %2.1f %s' 
-    #        %(time_s, modus, charger, AVM ,si_power, pv, grid, cell ,pack,si_volt, SoC_calc, action))
+    time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
+    print ('%s%s %04d act %04.0f %04.0f PV %04d GRID %04d CELL %.3f PACK %2.2f %05.2f SoC %2.1f %s' 
+            %(time_s, modus, charger, AVM ,si_power, pv, grid, cell ,pack,si_volt, SoC_calc, action))
     data_stream = build_data(charger)
     test=data_stream.encode('hex')
     ser.write (test.decode('hex'))
-    if first_run :
-      first_run = 0    
+    if (charger_old >=0 and charger <0) or (charger_old <=0 and charger >0):
       time.sleep(15)
+      print("MOde switch, wait 15s")
     else:
       time.sleep(2)
+    charger_old = charger #Remember last cycle mode
 client.close()
 
