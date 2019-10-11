@@ -43,9 +43,8 @@ def set_power(grid,PV,SoC_calc,charger,si_power,action):
   resp = req.get(url+'control_status'+'?value='+action)
 
   resp = req.get(url+'SoC_calc'+'?value='+str(SoC_calc))
-  if charger < 0 :
-     if si_power < 0:
-         req.get(url+'Batt_Charge'+'?value='+str(si_power))
+  if charger < 0 and si_power < 0:
+         req.get(url+'Batt_Charge'+'?value='+str(-si_power))
          req.get(url+'Batt_Discharge'+'?value='+str(0))
   elif charger > 0:
      req.get(url+'Batt_Charge'+'?value='+str(0))
@@ -105,9 +104,9 @@ def GET_SI():
         si_volt=0
         si_power=0
         time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
-        print ('%s Wrong feedback from Battery Inverter' %(time_s))      
+        print ('%s Wrong feedback from Battery Inverter' %(time_s))
       if si_power > 20000: #negative value comes with twos compl
-        si_power = (-32768 + si_power)*0.1
+        si_power = -(-32768 + si_power)*0.1
       else:
         si_power = si_power *0.1
     else : #no update possible
