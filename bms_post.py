@@ -34,11 +34,15 @@ while True :
  except: 
    ser.close()
  time.sleep(1)
+ if(ser.isOpen() == False):
+    ser.open()
  Antw33 = ser.read(140)
+# print Antw33
 #SoC
  data = (Antw33.encode('hex') [(74*2):(75*2)])
  try:
    resp = req.get(url+'SoC'+'?value='+str(int(data,16)))
+ #  print 
  except:
    pass
 #Power

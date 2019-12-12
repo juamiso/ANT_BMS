@@ -16,6 +16,10 @@ from scipy.interpolate import interp1d
 import numpy as np
 from binascii import unhexlify
 
+#Limit inverter power
+maxpower = 1700
+minpower = 2000
+
 # Import the ADS1x15 module.
 from ADS1x15 import ADS1115
 adc = ADS1115(address=0x48, busnum=1)
@@ -74,8 +78,8 @@ def build_data ( pow ) :
     power = str('8''%03X' % (pow))
   Adr = '0B3F0D'
   #Rest = '01f9021c00960000000000' #50.5V 54V
-  Rest = '01f9023500960000000000' #50.5V 56.5V
-  #Rest = '01db023000960000000000' #47.5 56V 15CELLS
+#  Rest = '01f9023500960000000000' #50.5V 56.5V
+  Rest = '01e0023500960000000000' #48 56.5V
   #Rest = '01f9023000960000000000' #50.5V 56V
   #Rest = '01f9022100960000000000' #50.5V 54.5V
   #Rest = '01f9022b00960000000000' #50.5V 55.5V
@@ -134,7 +138,9 @@ grid = int(0)    #Total going to GRID
 charger = int(10)
 charger_old = 0
 batt_full_flag = 0
+batt_empty_flag =0
 SoC_target_int = 90
+SoC_min_target_int=15
 count = 0
 AVM=0
 si_power = 0
@@ -178,13 +184,19 @@ while 1:
     except:
       time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
       print ('%s WARNING Modbus Inverter not answering' %(time_s))
-    try:
+    try: #Read from iobroker the user whised max SoC
       SoC_target=int(req.get('http://localhost:8087/getPlainValue/vis.0.SoC_target').text)
       if SoC_target > 10 and SoC_target <=100 and SoC_target != SoC_target_int:
          SoC_target_int = SoC_target
          batt_full_flag = 0
          time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
          print ('%s updating SoC Target' %(time_s))
+    except:
+      pass
+    try: #Read from Iobroker the user wished min SoC
+       SoC_min_target=int(req.get('http://localhost:8087/getPlainValue/vis.0.SoC_min_target').text)
+       if SoC_min_target >= 0 and SoC_min_target <=100 and SoC_min_target != SoC__min_target_int:
+          SoC_min_target_int = SoC_min_target
     except:
       pass
 
@@ -199,8 +211,8 @@ while 1:
            action = "Inc.Charg"
         else :
            action = "Dec.Supply"
-        if charger <= -1600 :      #Upper limit
-            charger = -1600
+        if charger <= -minpower :      #Upper limit
+            charger = -minpower
             action = "Charg.Max"
         if BMS_SoC >= SoC_target_int:  #Batt. full
             charger = 0
@@ -209,12 +221,11 @@ while 1:
             time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
             print ('%s Batt Full' %(time_s))
 
-
     elif grid > 10:
         charger += grid      #setpoint charger
         action = "Inc.Supply"
-        if charger > 1600 :        #Lower limit
-            charger = 1600
+        if charger > maxpower :        #Lower limit
+            charger = maxpower
             action = "Suppl.Max"
         if BMS_SoC < (SoC_target -2) and batt_full_flag == 1:
            batt_full_flag = 0
@@ -228,7 +239,7 @@ while 1:
           charger = 0 #Supply was off, Turn SI OFF
         action = "Batt_Full"
     else :
-        action = ("Opt._Ctrl")
+        action = "Opt._Ctrl"
     (si_power_new,si_volt_new) = GET_SI()
     if si_power_new != 12345: #Updated values available
       si_power = si_power_new
@@ -241,6 +252,16 @@ while 1:
       charger = -pv
       if pv == 0 :
         charger = - 100  #keep supplying something, avoid turning SI off
+    
+# Battery lower limit
+    if BMS_SoC <= SoC_min_target:
+      batt_empty_flag = 1
+    if BMS_SoC > (SoC_min_target +2) :
+      batt_empty_flag = 0
+    if (charger > 0) and (batt_empty_flag == 1):
+      charger = 0 #Stop discharging the battery
+      action = "Empty" 
+
     set_power(grid,pv,SoC_calc,charger,si_power,action)
     if count == 5 :
       try:
