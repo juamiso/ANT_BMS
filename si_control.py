@@ -12,41 +12,21 @@ from pymodbus.file_message import *
 from pymodbus.other_message import *
 from pymodbus.mei_message import *
 import struct
-from scipy.interpolate import interp1d
-import numpy as np
 from binascii import unhexlify
 
 #Limit inverter power
-maxpower = 1700
+maxpower = 2000
 minpower = 2000
-
-# Import the ADS1x15 module.
-from ADS1x15 import ADS1115
-adc = ADS1115(address=0x48, busnum=1)
-#Open Circuit voltages
-#V = (2.50,3.213,3.251,3.290,3.315,3.317,3.319,3.334,3.349,3.356,3.366,3.383,3.445,3.478)
-#Pack Level Voltage divided
-V = (3.3528,4.3091,4.36,4.4123,4.4458,4.4485,4.4512,4.4713,4.4914,4.5008,4.5142,4.537,4.6202 ,4.6645)
-SoC = (0,10,20,30,40,50,60,70,80,90,95,97,99,100)
-f_lin = interp1d(V, SoC)
-GAIN = 2/3
+#Declare
 si_power = 0
 si_volt = 0
-
-def get_wh_total():
-  url = 'http://localhost:8087/getPlainValue/fritzdect.0.DECT200_116570146230.energy'
-  string = req.get(url).text
-  wh_total = int(string[1:len(string)-1])
-  return(wh_total)
-
-def set_power(grid,PV,SoC_calc,charger,si_power,action):
+wh_daily = 0
+def set_power(grid,PV,charger,si_power,action):
 #Send to iobroker values for diagram purposes
   url = 'http://localhost:8087/set/vis.0.'
   resp = req.get(url+'Grid'+'?value='+str(grid))
   resp = req.get(url+'PV'+'?value='+str(PV))
   resp = req.get(url+'control_status'+'?value='+action)
-
-  resp = req.get(url+'SoC_calc'+'?value='+str(SoC_calc))
   if charger < 0 and si_power < 0:
          req.get(url+'Batt_Charge'+'?value='+str(-si_power))
          req.get(url+'Batt_Discharge'+'?value='+str(0))
@@ -62,8 +42,8 @@ def set_power(grid,PV,SoC_calc,charger,si_power,action):
 def get_wh_daily(wh_total,today):
   if int(strftime("%d", time.localtime())) != today : #New Day
     today = int(strftime("%d", time.localtime()))     #Change day
-    wh_total = get_wh_total()                 #Reference total counter
-  wh_day = get_wh_total()-wh_total            #Calculate current daily
+    wh_total = GET_SI_WH()                 #Reference total counter
+  wh_day = GET_SI_WH()-wh_total            #Calculate current daily
   url = 'http://localhost:8087/set/vis.0.'
   resp = req.get(url+'wh_day'+'?value='+str(wh_day))
   return(wh_total,wh_day,today)
@@ -96,7 +76,10 @@ def build_data ( pow ) :
 def GET_SI():
     Anfr33 = '0b330101325f'
     ser.write (Anfr33.decode('hex'))
+    time.sleep(0.1)
     Antw33 = ser.read(42)
+    Antw33h = Antw33.encode('hex')
+    #print ('Sent %s read %s'%(Anfr33,Antw33h))
     reply_ID = (Antw33.encode('hex') [2:4])
     if reply_ID == '33':
       batp = (Antw33.encode('hex') [20:24])
@@ -109,7 +92,7 @@ def GET_SI():
         si_power=0
         time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
         print ('%s Wrong feedback from Battery Inverter' %(time_s))
-      if si_power > 20000: #negative value comes with twos compl
+      if si_power > 25000: #negative value comes with twos compl
         si_power = -(-32768 + si_power)*0.1
       else:
         si_power = si_power *0.1
@@ -117,6 +100,18 @@ def GET_SI():
         si_power = 12345
         si_volt = 12345
     return (si_power, si_volt)
+
+def GET_SI_WH():
+    Anfr3E = '0b3e0101a39c'
+    ser.write (Anfr3E.decode('hex'))
+    time.sleep(0.1)
+    Antw3E = ser.read(38)
+    Antw3Eh = Antw3E.encode('hex')
+    #print ('Sent %s read %s'%(Anfr3E,Antw3Eh))
+    NRG = (Antw3E.encode('hex') [18:26])
+    NRG = int(NRG,16)/36000
+    #print ('%f kWh total' % NRG)
+    return (NRG)
 
 #Define RS485 serial port
 ser = serial.Serial(
@@ -146,27 +141,15 @@ AVM=0
 si_power = 0
 si_volt = 0
 try:
-  wh_total=get_wh_total()
+  wh_total=GET_SI_WH()
 except:
   print("WH_TOTAL funtion call error")
 today = int(strftime("%M", time.localtime()))
 while 1:
-#    value=adc.read_adc(0, gain=GAIN,data_rate=8)
-    #voltage = float(value)*6.144/32768.0 - 0.04 #0.3 V offset at pack level calibrated
-    voltage = 4
-    voltage_lim=voltage
-    if voltage < 3.35 :
-      voltage_lim = 3.35
-    if voltage > 4.66 :
-      voltage_lim = 4.66
-    SoC_calc = f_lin(voltage_lim) #Deprecated, using now BMS SoC instead of read Voltage
     try: 
       BMS_SoC = int(req.get('http://localhost:8087/getPlainValue/vis.0.SoC').text)
     except:
       BMS_SoC = SoC_calc #Default to meas. Voltage based SoC if BMS_SoC not available
-    cell = voltage/1.34113 #right
-    pack = cell * 16
-   
     #GET GRID VALUE from SMARTMETER
     try:
       value= client.read_holding_registers(40098-1,2,unit=240)
@@ -262,7 +245,7 @@ while 1:
       charger = 0 #Stop discharging the battery
       action = "Empty" 
 
-    set_power(grid,pv,SoC_calc,charger,si_power,action)
+    set_power(grid,pv,charger,si_power,action)
     if count == 5 :
       try:
          (wh_total,wh_daily,today) = get_wh_daily(wh_total, today)
@@ -280,8 +263,8 @@ while 1:
   
     # VERBOSE MODE for logging to file
     time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
-    print ('%s%s %04d act %04.0f %04.0f PV %04d GRID %04d CELL %.3f PACK %2.2f %05.2f SoC %2.1f %s' 
-            %(time_s, modus, charger, AVM ,si_power, pv, grid, cell ,pack,si_volt, SoC_calc, action))
+    print ('%s%s %04d act %04.0f PV %04d GRID %04d PACK %05.2f SoC %2.1f Wh day %d total %d Wh %s'
+            %(time_s, modus, charger ,si_power, pv, grid, si_volt, BMS_SoC , wh_daily, wh_total, action))
     data_stream = build_data(charger)
     test=data_stream.encode('hex')
     ser.write (test.decode('hex'))
