@@ -1,0 +1,17 @@
+ [Unit]
+ Description=SolarInvert control script
+ After=iobroker.service
+ 
+ [Service]
+ User=pi
+ Type=idle
+ ExecStart=/usr/bin/python /home/pi/si_control.py
+# ExecStart=nohup stdbuf -o 0 /usr/bin/python /home/pi/si_control.py > /home/pi/si_control.log 
+# StandardOutput=syslog
+# StandardError=syslog
+ Restart=always
+ RestartSec=3
+
+ [Install]
+ WantedBy=multi-user.target
+
