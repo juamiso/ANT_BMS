@@ -1,4 +1,16 @@
 #Description
+UPDATE: Branched to influxdb
+
+The control has been simplified and runs only in two
+python scripts. Iobroker is not longer needed. Also 
+no ADC converter needed, just RS485 to command to the
+bidirectional inverter to charge/discharge the battery.
+
+See commit comments for more information
+
+Original description:
+
+
 This is a set of python scripts used for controlling a
 DIY battery storage for a Photovoltaic based system.
 Two python scripts plus a iobroker installation on a
