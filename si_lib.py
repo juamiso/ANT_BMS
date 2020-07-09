@@ -43,7 +43,7 @@ def readbms(ser_blue):
      BMS_pow=str((-(2*2147483648)+int(data,16)))
    else:
      BMS_pow=str(int(data,16))
-     data = (Antw33.encode('hex') [(70*2):(73*2+2)])
+   data = (Antw33.encode('hex') [(70*2):(73*2+2)])
    if int(data,16)>2147483648:
       BMS_Current = str((-(2*2147483648)+int(data,16))*0.1)
    else:
