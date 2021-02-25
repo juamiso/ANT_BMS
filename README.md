@@ -17,4 +17,40 @@ battery pack voltage) as well as grid and photovoltaic
 powers (using TCP Modbus from a Fronius Inverter). Some
 signals are read from iobroker via simple_api.
 
-Work in progress. 
+There is a branched influxdb variant, which is simpler
+and more robust. It dows not need iobroker to run since
+it posts directly from the python script to the influxdb 
+server
+
+To be able to automatically connect to the bluetooth of
+the BMS this solution uses the following:
+
+This is part of the si_control.py file
+```
+# Define Serial port (over bluetooth) for BMS
+ser_blue = serial.Serial(
+    port='/dev/rfcomm0',
+    baudrate = 9600,
+    parity=serial.PARITY_NONE,
+    stopbits=serial.STOPBITS_ONE,
+    bytesize=serial.EIGHTBITS,
+    timeout = 0)
+```
+
+And in /etc/bluetooth/rfcomm.conf put 
+```
+rfcomm0 {
+    # Automatically bind the device at startup
+    bind yes;
+
+   # Bluetooth address of the device
+    device AA:BB:CC:A1:23:45;
+
+    # RFCOMM channel for the connection
+    channel 0;
+
+    # Description of the connection
+    comment "BMS";
+}
+
+```
