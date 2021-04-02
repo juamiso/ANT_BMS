@@ -15,27 +15,22 @@ import struct
 from binascii import unhexlify
 from si_lib import post_to_influx
 from si_lib import readbms
+import socket
 
+SoC_target = 85
+SoC_min_target = 15
 BMS_SoC = 0
+
 # Limit inverter power
 maxpower = 2200
-minpower = 2200
+minpower = 2200 #Charge
 # Declare
 si_power = 0
 si_volt = 0
+si_volt_AC = 0
 wh_daily = 0
 #myToken = 'eyJhbGciOi-JIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InBpIiwiZXhwIjoyMjM4ODgzMjAwfQ.xOwi_jQTLG2T41PF3NT54pKfpTAFfNFl6WldoivzwP8'
 #header_string = {'Authorization': 'Bearer {}'.format(myToken)}
-
-def get_wh_daily(wh_total, today):
-    if int(strftime("%d", time.localtime())) != today:  # New Day
-        today = int(strftime("%d", time.localtime()))  # Change day
-        wh_total = GET_SI_WH()  # Reference total counter
-    wh_day = GET_SI_WH() - wh_total  # Calculate current daily
-    url = 'http://localhost:8087/set/vis.0.'
-    resp = req.get(url + 'wh_day' + '?value=' + str(wh_day))
-    resp = req.get(url + 'SI_Wh_total' + '?value=' + str(wh_total))
-    return (wh_total, wh_day, today)
 
 # POSITIVE means discharge battery
 def build_data(pow):
@@ -69,22 +64,25 @@ def GET_SI():
     time.sleep(0.1)
     Antw33 = ser.read(42)
     Antw33h = Antw33.encode('hex')
-    #print('Sent %s read %s' % (Anfr33, Antw33h))
+   # print('Sent %s read %s' % (Anfr33, Antw33h))
     reply_ID = (Antw33.encode('hex')[2:4])
     if (reply_ID) == '3f':
         #Chop off 0b3f0101f25c bytes
         Antw33 = Antw33[6:41]
-        #print('Chopped to %s' % Antw33.encode('hex'))
+   #     print('Chopped to %s' % Antw33.encode('hex'))
         reply_ID = (Antw33.encode('hex')[2:4])
     if reply_ID == '33':
         batp = (Antw33.encode('hex')[20:24])
         batu = (Antw33.encode('hex')[6:10])
+        batuac = (Antw33.encode('hex')[12:14])
         try:
             si_power = struct.unpack('>H', unhexlify(batp))[0]
             si_volt = struct.unpack('>H', unhexlify(batu))[0] * 0.108
+            si_volt_ac = struct.unpack('>B', unhexlify(batuac))[0] + 50
         except:
             si_volt = 0
             si_power = 0
+            si_volt_ac = 0
             time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
             print('%s Wrong feedback from Battery Inverter' % (time_s))
         if si_power > 25000:  # negative value comes with twos compl
@@ -94,9 +92,9 @@ def GET_SI():
     else:  # no update possible
         si_power = 12345
         si_volt = 12345
-        # print('SI does not answer to request, setting fdb to 12345')
-    #print('Power read SI %d ' % si_power)
-    return (si_power, si_volt)
+        si_volt_ac = 12345
+        print('SI does not answer to request, setting feedback to 12345')
+    return (si_power, si_volt, si_volt_ac)
 
 def GET_SI_WH():
     Anfr3E = '0b3e0101a39c'
@@ -128,8 +126,11 @@ ser_blue = serial.Serial(
     bytesize=serial.EIGHTBITS,
     timeout = 0)
 
-# Connect to inverter
-ip = '192.168.0.70'  # This is the ip from your fronius inverter
+# Connect to solar inverter
+try:
+  ip=socket.gethostbyname(SolarInvNetName)
+except:
+  ip = '192.168.0.70'  # Default to this ip if name non resolvable
 client = ModbusClient(ip, port=502)
 client.connect()
 
@@ -140,16 +141,15 @@ charger = int(10)
 charger_old = 0
 batt_full_flag = 0
 batt_empty_flag = 0
-SoC_target_int = 80
-SoC_min_target_int = 20
+#SoC_target_int = 85
 count = 0
-AVM = 0
 si_power = 0
 si_volt = 0
-# try:
-#   wh_total=GET_SI_WH()
-# except:
-#   print("WH_TOTAL funtion call error")
+si_volt_ac = 0
+si_volt_new = 0
+si_volt_ac_new = 0
+si_power_new = 0
+
 wh_total = 0;
 today = int(strftime("%M", time.localtime()))
 try:
@@ -182,13 +182,13 @@ while 1:
 #            time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
 #            print('%s updating SoC Target' % (time_s))
 #    except:
-    SoC_target = 80
+#    SoC_target = 100
 #    try:  # Read from Iobroker the user wished min SoC
 #        SoC_min_target = int(req.get('http://localhost:8087/getPlainValue/vis.0.SoC_min_target').text)
 #        if SoC_min_target >= 0 and SoC_min_target <= 100 and SoC_min_target != SoC__min_target_int:
 #            SoC_min_target_int = SoC_min_target
 #    except:
-    SoC_min_target = 20
+#    SoC_min_target = 15
 
     # control loop start here
     if grid < -10 and batt_full_flag == 0:
@@ -204,7 +204,7 @@ while 1:
         if charger <= -minpower:  # Upper limit
             charger = -minpower
             action = "Charg.Max"
-        if BMS_SoC >= SoC_target_int:  # Batt. full
+        if BMS_SoC >= SoC_target:  # Batt. full
             charger = 0
             action = "Max.SoC"
             batt_full_flag = 1
@@ -219,7 +219,6 @@ while 1:
             action = "Suppl.Max"
         if BMS_SoC < (SoC_target - 2) and batt_full_flag == 1:
             batt_full_flag = 0
-
 
     elif batt_full_flag == 1 and grid < 0:  # and pv > 150: #Batt Full and PV available
         if charger > 0:  # Grid injection is not coming from PV but from Supply
@@ -249,27 +248,22 @@ while 1:
         charger = 0  # Stop discharging the battery
         action = "Empty"
 
-    (si_power_new, si_volt_new) = GET_SI()
-    # print('charger value',charger)
+    (si_power_new, si_volt_new_,si_volt_ac_new) = GET_SI()
     if si_power_new != 12345:  # Updated values available
         si_power = si_power_new
         si_volt = si_volt_new
+        si_volt_ac = si_volt_ac_new
     elif charger == 0:  # Looks like no updates due to inverter turned off
         print ('Setting SI Power to zero since it does not update feedback')
         si_power = 0  # so setting the value to zero for nice plots
     if count == 5:
-        try:
-            (wh_total, wh_daily, today) = get_wh_daily(wh_total, today)
-            count = 0
-        except:
-            AVM = -9999
         try:
           BMS_SoC_temp = readbms(ser_blue)
         except:
           pass
         if BMS_SoC_temp != 0: #Only update SoC if non zero
            BMS_SoC = BMS_SoC_temp
-        post_to_influx(grid,pv,charger,si_power)
+        post_to_influx(grid,pv,charger,si_power,si_volt,si_volt_ac)
         count = 0
     else:
         count += 1
@@ -277,12 +271,10 @@ while 1:
         modus = "Supply"
     else:
         modus = "Charge"
-    # if charger >-100 and charger_old >-100 : #Do not charge if lower than 100 W (efficiency very bad)
-    #  charger = 0
     # VERBOSE MODE for logging to file
     time_s = strftime("%y/%m/%d %H:%M:%S ", time.localtime())
-    print ('%s%s %04d act %04.0f PV %04d GRID %04d PACK %05.2f SoC %2d  %s'
-            %(time_s, modus, charger, si_power, pv, grid, si_volt, BMS_SoC , action))
+    print ('%s%s %04d act %04.0f PV %04d GRID %04d PACK %05.2f SoC %2d AC %3dV  %s'
+            %(time_s, modus, charger, si_power, pv, grid, si_volt, BMS_SoC , si_volt_ac, action))
     data_stream = build_data(charger)
     test = data_stream.encode('hex')
     ser.write(test.decode('hex'))
